@@ -1,84 +1,113 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getBOMItems, getScenarios, healthCheck } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { listBOMs, ApiError } from '../services/api';
 
-function Dashboard() {
-  const [status, setStatus] = useState('checking...');
-  const [bomCount, setBomCount] = useState(0);
-  const [scenarioCount, setScenarioCount] = useState(0);
-  const [chartData, setChartData] = useState([]);
+export default function Dashboard() {
+  const [boms,    setBoms]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
+  const [health,  setHealth]  = useState(null);
 
   useEffect(() => {
-    healthCheck()
-      .then(() => setStatus('🟢 Online'))
-      .catch(() => setStatus('🔴 Offline'));
+    // Health check
+    fetch('http://localhost:8000/health')
+      .then(r => r.json())
+      .then(data => setHealth(data))
+      .catch(() => setHealth({ status: 'unreachable' }));
 
-    getBOMItems()
-      .then(res => {
-        const items = res.data || [];
-        setBomCount(items.length);
-      })
-      .catch(() => setBomCount(0));
-
-    getScenarios()
-      .then(res => {
-        const scenarios = res.data || [];
-        setScenarioCount(scenarios.length);
-        const data = scenarios.slice(0, 6).map(s => ({
-          name: s.name || `Scenario ${s.id}`,
-          cost: s.total_cost || 0,
-        }));
-        setChartData(data);
-      })
-      .catch(() => setScenarioCount(0));
+    // Load BOMs
+    listBOMs()
+      .then(data => setBoms(data || []))
+      .catch(e => setError(e instanceof ApiError ? e.detail : e.message))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="page">
-      <h2>Dashboard</h2>
+    <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+        ☁️ Cloud Cost Calculator
+      </h1>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>
+        Multi-cloud cost estimation with per-provider discount modelling
+      </p>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-label">Backend Status</div>
-          <div className="stat-value">{status}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">BOM Items</div>
-          <div className="stat-value">{bomCount}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Scenarios</div>
-          <div className="stat-value">{scenarioCount}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">API Base</div>
-          <div className="stat-value" style={{fontSize:'0.9rem'}}>localhost:8000</div>
-        </div>
+      {/* Backend status */}
+      <div style={{
+        padding: '1rem 1.5rem',
+        borderRadius: '12px',
+        marginBottom: '1.5rem',
+        background: health?.status === 'healthy' ? '#f0fdf4' : '#fef2f2',
+        border: `1px solid ${health?.status === 'healthy' ? '#86efac' : '#fca5a5'}`,
+      }}>
+        <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>
+          {health?.status === 'healthy'
+            ? `✅ Backend connected — ${health.app} v${health.version}`
+            : health?.status === 'unreachable'
+            ? '❌ Backend unreachable — is it running on port 8000?'
+            : '⏳ Checking backend…'}
+        </span>
       </div>
 
-      {chartData.length > 0 && (
-        <div className="chart-container">
-          <h3>Scenario Cost Comparison</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
-              <Legend />
-              <Bar dataKey="cost" fill="#4f8ef7" name="Total Cost ($)" />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+        {[
+          { label: 'Total BOMs',     value: loading ? '…' : boms.length,                              icon: '📋' },
+          { label: 'Cloud Providers', value: loading ? '…' : new Set(boms.map(b => b.cloud_provider)).size, icon: '☁️' },
+          { label: 'Total Services', value: loading ? '…' : boms.reduce((sum, b) => sum + (b.service_count || 0), 0), icon: '⚙️' },
+        ].map((stat) => (
+          <div key={stat.label} style={{
+            background: 'white', borderRadius: '12px',
+            border: '1px solid #e5e7eb', padding: '1.5rem', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '2rem' }}>{stat.icon}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#1f2937' }}>{stat.value}</div>
+            <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent BOMs */}
+      <h2 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem' }}>Recent BOMs</h2>
+      {error && (
+        <div style={{ padding: '1rem', background: '#fef2f2', borderRadius: '8px',
+          border: '1px solid #fca5a5', color: '#dc2626', marginBottom: '1rem' }}>
+          ⚠️ {error}
         </div>
       )}
-
-      {chartData.length === 0 && (
-        <div className="empty-state">
-          <p>📭 No scenario data yet. Create scenarios to see cost comparisons here.</p>
+      {loading ? (
+        <p style={{ color: '#9ca3af' }}>Loading…</p>
+      ) : boms.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '3rem',
+          background: '#f9fafb', borderRadius: '12px', border: '2px dashed #e5e7eb' }}>
+          <div style={{ fontSize: '3rem' }}>📋</div>
+          <p style={{ color: '#6b7280', marginTop: '0.5rem' }}>
+            No BOMs yet. Go to <strong>Bill of Materials</strong> to create your first one.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {boms.slice(0, 5).map(bom => (
+            <div key={bom.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '1rem 1.25rem', background: 'white',
+              borderRadius: '10px', border: '1px solid #e5e7eb',
+            }}>
+              <div>
+                <div style={{ fontWeight: '600', color: '#1f2937' }}>{bom.name}</div>
+                <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '2px' }}>
+                  {bom.cloud_provider.toUpperCase()} · {bom.service_count} service{bom.service_count !== 1 ? 's' : ''}
+                  {bom.azure_hybrid_benefit ? ' · 🏷️ AHB' : ''}
+                </div>
+              </div>
+              <span style={{
+                fontSize: '0.75rem', fontWeight: '600', padding: '4px 10px',
+                borderRadius: '20px', background: '#dbeafe', color: '#1d4ed8',
+              }}>
+                {bom.cloud_provider.toUpperCase()}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
-
-export default Dashboard;

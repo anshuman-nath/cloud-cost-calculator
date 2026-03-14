@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
-import BillOfMaterials from './pages/BillOfMaterials';
-import Scenarios from './pages/Scenarios';
+import BillOfMaterials from './components/BillOfMaterials';
+import Scenarios from './components/Scenarios';
 import Pricing from './pages/Pricing';
 import './styles/App.css';
 
@@ -11,11 +11,11 @@ function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'dashboard': return <Dashboard />;
-      case 'bom': return <BillOfMaterials />;
-      case 'scenarios': return <Scenarios />;
-      case 'pricing': return <Pricing />;
-      default: return <Dashboard />;
+      case 'dashboard':  return <Dashboard />;
+      case 'bom':        return <BillOfMaterials />;
+      case 'scenarios':  return <Scenarios />;
+      case 'pricing':    return <Pricing />;
+      default:           return <Dashboard />;
     }
   };
 

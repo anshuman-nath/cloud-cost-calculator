@@ -1,6 +1,6 @@
 """
 API package initialization
 """
-from app.api import bom, scenarios, pricing
+# Old routers kept for reference but not auto-imported
+# to avoid conflicts with v1 routers
 
-__all__ = ["bom", "scenarios", "pricing"]

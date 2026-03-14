@@ -1,69 +1,43 @@
-import React, { useState } from 'react';
-import { getPricing } from '../services/api';
+import React from 'react';
 
-function Pricing() {
-  const [provider, setProvider] = useState('AWS');
-  const [service, setService] = useState('');
-  const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    getPricing(provider, service)
-      .then(res => setResults(res.data))
-      .catch(() => setError('Failed to fetch pricing. Check if backend is running.'))
-      .finally(() => setLoading(false));
-  };
-
+export default function Pricing() {
   return (
-    <div className="page">
-      <h2>💰 Cloud Pricing</h2>
+    <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+      <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+        💰 Pricing Reference
+      </h1>
+      <p style={{ color: '#6b7280', marginBottom: '2rem' }}>
+        Live pricing is fetched directly from cloud provider APIs when you generate scenarios.
+      </p>
 
-      <div className="form-card">
-        <h3>Look Up Service Pricing</h3>
-        <form onSubmit={handleSearch} className="form-grid">
-          <select value={provider} onChange={e => setProvider(e.target.value)}>
-            <option value="AWS">AWS</option>
-            <option value="Azure">Azure</option>
-            <option value="GCP">GCP</option>
-          </select>
-          <input placeholder="Service name (e.g. EC2, S3, Lambda)" value={service}
-            onChange={e => setService(e.target.value)} required />
-          <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Searching...' : '🔍 Search Pricing'}
-          </button>
-        </form>
-        {error && <p className="error">{error}</p>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+        {[
+          { provider: 'AWS',   icon: '🟠', source: 'AWS Bulk Pricing API',       url: 'https://pricing.us-east-1.amazonaws.com' },
+          { provider: 'Azure', icon: '🔵', source: 'Azure Retail Prices API',    url: 'https://prices.azure.com/api/retail/prices' },
+          { provider: 'GCP',   icon: '🔴', source: 'GCP Regional Rate Table',    url: 'https://cloud.google.com/compute/vm-instance-pricing' },
+        ].map((p) => (
+          <div key={p.provider} style={{
+            background: 'white', borderRadius: '12px',
+            border: '1px solid #e5e7eb', padding: '1.5rem',
+          }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>{p.icon}</div>
+            <div style={{ fontWeight: '700', fontSize: '1.1rem', marginBottom: '0.25rem' }}>{p.provider}</div>
+            <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>{p.source}</div>
+            <a href={p.url} target="_blank" rel="noreferrer"
+              style={{ fontSize: '0.75rem', color: '#2563eb', textDecoration: 'underline' }}>
+              View pricing docs →
+            </a>
+          </div>
+        ))}
       </div>
 
-      {results && (
-        <div className="table-container">
-          <h3>Results for {provider} - {service}</h3>
-          {Array.isArray(results) && results.length > 0 ? (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  {Object.keys(results[0]).map(k => <th key={k}>{k}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((row, i) => (
-                  <tr key={i}>
-                    {Object.values(row).map((v, j) => <td key={j}>{String(v)}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">No pricing data found for this service.</div>
-          )}
-        </div>
-      )}
+      <div style={{ marginTop: '2rem', padding: '1rem 1.5rem',
+        background: '#eff6ff', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+        <p style={{ fontSize: '0.85rem', color: '#1d4ed8' }}>
+          💡 To see live prices, go to <strong>Bill of Materials</strong> → create a BOM →
+          then go to <strong>Scenarios</strong> → click <strong>Generate Scenarios</strong>.
+        </p>
+      </div>
     </div>
   );
 }
-
-export default Pricing;

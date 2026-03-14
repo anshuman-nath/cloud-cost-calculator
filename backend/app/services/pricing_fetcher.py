@@ -6,6 +6,30 @@ Currency: USD always (current).
 Extensibility: currency param threads through all public methods.
                _convert_currency() is the single place to add forex later.
 """
+import boto3
+import json
+import asyncio
+
+# AWS Pricing API is ONLY available in us-east-1
+_pricing_client = boto3.client("pricing", region_name="us-east-1")
+
+# Maps region code → human-readable location name (required by Pricing API)
+REGION_LOCATION_MAP = {
+    "us-east-1": "US East (N. Virginia)",
+    "us-east-2": "US East (Ohio)",
+    "us-west-1": "US West (N. California)",
+    "us-west-2": "US West (Oregon)",
+    "eu-west-1": "Europe (Ireland)",
+    "eu-west-2": "Europe (London)",
+    "eu-central-1": "Europe (Frankfurt)",
+    "ap-south-1": "Asia Pacific (Mumbai)",
+    "ap-southeast-1": "Asia Pacific (Singapore)",
+    "ap-southeast-2": "Asia Pacific (Sydney)",
+    "ap-northeast-1": "Asia Pacific (Tokyo)",
+    "sa-east-1": "South America (Sao Paulo)",
+    "ca-central-1": "Canada (Central)",
+}
+
 import logging
 from typing import Optional
 import httpx
@@ -103,81 +127,42 @@ async def fetch_aws_pricing(
 
 
 async def _fetch_aws_ec2(config: dict, region: str) -> dict:
-    """
-    EC2 On-Demand pricing via AWS Bulk Pricing JSON API.
-    config keys: instance_type, quantity, os (linux|windows)
-    730 hours/month assumed (full utilization).
-    """
-    instance_type = config.get("instance_type", "m5.large")
-    quantity = int(config.get("quantity", 1))
-    os_type = config.get("os", "linux")
+    instance_type   = config.get("instance_type", "m5.large")
+    quantity        = int(config.get("quantity", 1))
+    os_type         = config.get("os", "linux").capitalize()  # "Linux" or "Windows"
     hours_per_month = 730
+    location        = REGION_LOCATION_MAP.get(region, "US East (N. Virginia)")
 
-    region_name = AWS_REGION_NAMES.get(region, "US East (N. Virginia)")
-    os_filter = "Linux" if os_type == "linux" else "Windows"
-
-    url = (
-        f"https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
+    response = await asyncio.to_thread(
+        _pricing_client.get_products,
+        ServiceCode="AmazonEC2",
+        Filters=[
+            {"Type": "TERM_MATCH", "Field": "instanceType",      "Value": instance_type},
+            {"Type": "TERM_MATCH", "Field": "location",          "Value": location},
+            {"Type": "TERM_MATCH", "Field": "operatingSystem",   "Value": os_type},
+            {"Type": "TERM_MATCH", "Field": "tenancy",           "Value": "Shared"},
+            {"Type": "TERM_MATCH", "Field": "preInstalledSw",    "Value": "NA"},
+            {"Type": "TERM_MATCH", "Field": "capacitystatus",    "Value": "Used"},
+        ],
+        MaxResults=1,
     )
-    # Use the filter API for efficiency
-    filter_url = (
-        f"https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/"
-        f"region_index.json"
-    )
 
-    # Use AWS Price List Query API (filters) — more efficient than full index
-    query_url = (
-        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
-    )
-    params = {
-        "Filter.1.Type": "TERM_MATCH",
-        "Filter.1.Field": "instanceType",
-        "Filter.1.Value": instance_type,
-        "Filter.2.Type": "TERM_MATCH",
-        "Filter.2.Field": "location",
-        "Filter.2.Value": region_name,
-        "Filter.3.Type": "TERM_MATCH",
-        "Filter.3.Field": "operatingSystem",
-        "Filter.3.Value": os_filter,
-        "Filter.4.Type": "TERM_MATCH",
-        "Filter.4.Field": "tenancy",
-        "Filter.4.Value": "Shared",
-        "Filter.5.Type": "TERM_MATCH",
-        "Filter.5.Field": "capacityStatus",
-        "Filter.5.Value": "Used",
-        "Filter.6.Type": "TERM_MATCH",
-        "Filter.6.Field": "preInstalledSw",
-        "Filter.6.Value": "NA",
-        "formatVersion": "aws_v1",
-        "callback": "",
-        "pricingRegion": region,
-    }
-
-    # Use the newer filter-based endpoint
-    api_url = f"https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/{region}/index.json"
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(api_url)
-        resp.raise_for_status()
-        data = resp.json()
-
-    hourly_rate = _extract_ec2_rate(data, instance_type, os_filter)
+    price_item  = json.loads(response["PriceList"][0])
+    on_demand   = price_item["terms"]["OnDemand"]
+    price_dims  = next(iter(on_demand.values()))["priceDimensions"]
+    hourly_rate = float(next(iter(price_dims.values()))["pricePerUnit"]["USD"])
     monthly_cost = hourly_rate * hours_per_month * quantity
 
     return {
         "monthly_cost_usd": round(monthly_cost, 4),
-        "unit": "instance-hour",
-        "price_per_unit": hourly_rate,
-        "source": "aws_api",
+        "unit":             "instance-hour",
+        "price_per_unit":   hourly_rate,
+        "source":           "aws_pricing_api",
         "details": {
-            "instance_type": instance_type,
-            "quantity": quantity,
-            "os": os_type,
-            "region": region,
-            "hours_per_month": hours_per_month,
+            "instance_type": instance_type, "quantity": quantity,
+            "os": os_type, "region": region,
         },
     }
-
 
 def _extract_ec2_rate(data: dict, instance_type: str, os_filter: str) -> float:
     """
@@ -207,53 +192,53 @@ def _extract_ec2_rate(data: dict, instance_type: str, os_filter: str) -> float:
     raise ValueError(f"Could not find EC2 rate for {instance_type} ({os_filter})")
 
 
+# Maps engine config value → AWS Pricing API databaseEngine string
+RDS_ENGINE_MAP = {
+    "mysql": "MySQL", "postgres": "PostgreSQL", "mariadb": "MariaDB",
+    "sqlserver": "SQL Server", "mssql": "SQL Server",
+    "oracle": "Oracle", "aurora-mysql": "Aurora MySQL",
+    "aurora-postgres": "Aurora PostgreSQL",
+}
+
 async def _fetch_aws_rds(config: dict, region: str) -> dict:
-    """
-    RDS On-Demand pricing.
-    config keys: engine (mysql|postgres|oracle|sqlserver), instance_type,
-                 storage_gb, replicas, region
-    """
-    engine = config.get("engine", "mysql").lower()
+    engine        = config.get("engine", "mysql").lower()
     instance_type = config.get("instance_type", "db.m5.large")
-    storage_gb = float(config.get("storage_gb", 100))
-    replicas = int(config.get("replicas", 0))
+    storage_gb    = float(config.get("storage_gb", 100))
+    replicas      = int(config.get("replicas", 0))
     hours_per_month = 730
+    location      = REGION_LOCATION_MAP.get(region, "US East (N. Virginia)")
+    db_engine     = RDS_ENGINE_MAP.get(engine, "MySQL")
 
-    engine_map = {
-        "mysql":      "MySQL",
-        "postgres":   "PostgreSQL",
-        "postgresql": "PostgreSQL",
-        "oracle":     "Oracle",
-        "sqlserver":  "SQL Server",
-        "aurora":     "Aurora MySQL",
-    }
-    db_engine = engine_map.get(engine, "MySQL")
+    response = await asyncio.to_thread(
+        _pricing_client.get_products,
+        ServiceCode="AmazonRDS",
+        Filters=[
+            {"Type": "TERM_MATCH", "Field": "instanceType",    "Value": instance_type},
+            {"Type": "TERM_MATCH", "Field": "location",        "Value": location},
+            {"Type": "TERM_MATCH", "Field": "databaseEngine",  "Value": db_engine},
+            {"Type": "TERM_MATCH", "Field": "deploymentOption","Value": "Single-AZ"},
+        ],
+        MaxResults=1,
+    )
 
-    api_url = f"https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/{region}/index.json"
+    price_item  = json.loads(response["PriceList"][0])
+    on_demand   = price_item["terms"]["OnDemand"]
+    price_dims  = next(iter(on_demand.values()))["priceDimensions"]
+    hourly_rate = float(next(iter(price_dims.values()))["pricePerUnit"]["USD"])
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(api_url)
-        resp.raise_for_status()
-        data = resp.json()
-
-    hourly_rate = _extract_rds_rate(data, instance_type, db_engine)
-    storage_rate = _extract_rds_storage_rate(data)
-
-    instance_monthly = hourly_rate * hours_per_month * (1 + replicas)
-    storage_monthly = storage_rate * storage_gb
-    total = instance_monthly + storage_monthly
+    instance_cost = hourly_rate * hours_per_month
+    storage_cost  = storage_gb * 0.115   # gp2: $0.115/GB-month
+    replica_cost  = instance_cost * replicas * 0.6
+    monthly_cost  = instance_cost + storage_cost + replica_cost
 
     return {
-        "monthly_cost_usd": round(total, 4),
-        "unit": "instance-hour + GB-month",
-        "price_per_unit": hourly_rate,
-        "source": "aws_api",
+        "monthly_cost_usd": round(monthly_cost, 4),
+        "unit":             "instance-hour",
+        "price_per_unit":   hourly_rate,
+        "source":           "aws_pricing_api",
         "details": {
-            "engine": engine,
-            "instance_type": instance_type,
-            "storage_gb": storage_gb,
-            "replicas": replicas,
-            "region": region,
+            "engine": engine, "instance_type": instance_type,
+            "storage_gb": storage_gb, "replicas": replicas, "region": region,
         },
     }
 

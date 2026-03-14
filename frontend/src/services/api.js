@@ -403,7 +403,27 @@ export const DEFAULT_SERVICE_CONFIGS = {
  */
 export const CONFIG_FIELD_LABELS = {
   // Common
-  region:               { label: "Region",                   type: "text"   },
+  region: {
+    label:   "Region",
+    type:    "select",
+    options: [
+        // AWS regions
+        "us-east-1", "us-east-2", "us-west-1", "us-west-2",
+        "eu-west-1", "eu-west-2", "eu-central-1",
+        "ap-south-1", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+        "sa-east-1", "ca-central-1",
+        // Azure regions
+        "eastus", "eastus2", "westus", "westus2", "westus3",
+        "northeurope", "westeurope", "uksouth", "ukwest",
+        "southeastasia", "eastasia", "australiaeast",
+        "centralindia", "brazilsouth", "canadacentral",
+        // GCP regions
+        "us-central1", "us-east1", "us-east4", "us-west1", "us-west2",
+        "europe-west1", "europe-west2", "europe-west3", "europe-west4",
+        "asia-south1", "asia-southeast1", "asia-east1", "asia-northeast1",
+        "australia-southeast1", "southamerica-east1",
+    ],
+  },
   quantity:             { label: "Number of Instances",      type: "number" },
   os:                   { label: "Operating System",         type: "select",
                           options: ["linux", "windows"]                      },
