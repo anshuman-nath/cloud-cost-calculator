@@ -1115,3 +1115,81 @@ async def _fetch_gcp_bigquery(config: dict, region: str) -> dict:
             "storage_gb": storage_gb, "tb_queried_per_month": tb_queried, "region": region,
         },
     }
+# ---------------------------------------------------------------------------
+# PricingFetcher class — public interface for API layer (pricing.py)
+# Wraps standalone functions above into a callable class
+# ---------------------------------------------------------------------------
+
+class PricingFetcher:
+    """
+    Public interface so pricing.py can do:
+        fetcher = PricingFetcher()
+        await fetcher.fetch_infracost_pricing(service=..., region=...)
+        await fetcher.fetch_azure_pricing(service_name=..., region=...)
+    """
+
+    async def fetch_aws_pricing(
+        self,
+        service_type: str,
+        config: dict,
+        region: str = "us-east-1",
+        currency: str = "USD",
+    ) -> dict:
+        return await fetch_aws_pricing(service_type, config, region, currency)
+
+    async def fetch_azure_pricing(
+        self,
+        service_name: str,        # maps to service_type internally
+        region: str = "eastus",
+        config: dict = None,
+        currency: str = "USD",
+    ) -> dict:
+        """
+        Wrapper that accepts service_name (used by pricing.py test endpoint)
+        and maps it to the internal service_type expected by fetch_azure_pricing().
+        """
+        # Map human-readable service names → internal service_type keys
+        SERVICE_NAME_MAP = {
+            "Virtual Machines":          "compute",
+            "SQL Database":              "database",
+            "Cosmos DB":                 "nosql",
+            "Azure Kubernetes Service":  "container",
+            "Blob Storage":              "storage",
+            "Azure Functions":           "serverless",
+            "Azure Cache for Redis":     "cache",
+        }
+        service_type = SERVICE_NAME_MAP.get(service_name, service_name)
+        return await fetch_azure_pricing(
+            service_type, config or {}, region, currency
+        )
+
+    async def fetch_gcp_pricing(
+        self,
+        service_type: str,
+        config: dict,
+        region: str = "us-central1",
+        currency: str = "USD",
+        api_key: str = None,
+    ) -> dict:
+        return await fetch_gcp_pricing(service_type, config, region, currency, api_key)
+
+    async def fetch_infracost_pricing(
+        self,
+        service: str,
+        region: str = "us-east-1",
+    ) -> dict:
+        """
+        Infracost integration stub.
+        TODO: Replace with real Infracost API call when API key is available.
+        Docs: https://www.infracost.io/docs/supported_resources/
+        """
+        logger.warning(
+            "fetch_infracost_pricing() called but Infracost integration "
+            "is not yet implemented. Returning stub response."
+        )
+        return {
+            "status": "stub",
+            "service": service,
+            "region": region,
+            "message": "Infracost integration pending. Set INFRACOST_API_KEY to enable.",
+        }

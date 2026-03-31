@@ -6,7 +6,8 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.orm import relationship
 
 from app.utils.database import Base
-
+from sqlalchemy import Column, Integer, String, Boolean, JSON, DateTime
+from datetime import datetime
 
 class BillOfMaterials(Base):
     """
@@ -23,7 +24,7 @@ class BillOfMaterials(Base):
     # Only relevant when cloud_provider == "azure"
     # True = customer has existing Windows Server / SQL Server licenses
     azure_hybrid_benefit = Column(Boolean, default=False, nullable=False)
-
+    description = Column(String, nullable=True, default="")
     # List of service configs — each item is a dict:
     # {
     #   "service_name": str,

@@ -489,3 +489,68 @@ async def calculate_all_scenarios(
         "totals":               totals,
         "recommended_model":    best_model,
     }
+# ---------------------------------------------------------------------------
+# PricingEngine class — thin interface for ScenarioManager
+# Wraps the standalone functions above into a callable class
+# ---------------------------------------------------------------------------
+
+class PricingEngine:
+    """
+    Callable interface so ScenarioManager can do:
+        self.pricing_engine = PricingEngine()
+        self.pricing_engine.supports_discount(service_type)
+        self.pricing_engine.calculate_service_cost(service, pricing_model)
+    """
+
+    def supports_discount(self, service_type: str, provider: str = "aws") -> bool:
+        """
+        Returns True if the service type has ANY discount option beyond PAYG.
+        """
+        matrix = PROVIDER_DISCOUNT_MATRIX.get(provider, AWS_DISCOUNT_MATRIX)
+        options = matrix.get(service_type, [])
+        return any(opt.model != PricingModel.PAYG for opt in options)
+
+    def calculate_service_cost(
+        self,
+        service: dict,
+        pricing_model: PricingModel,
+    ) -> float:
+        """
+        Applies the discount fraction for the given pricing model to the
+        service's PAYG monthly cost.
+
+        Expects service dict to contain one of:
+          - 'payg_monthly_cost'  (set by pricing_fetcher)
+          - 'monthly_cost'       (legacy key)
+
+        Returns the discounted monthly cost as a float.
+        """
+        # Get base PAYG cost from whatever key is present
+        payg_cost = (
+            service.get("payg_monthly_cost")
+            or service.get("monthly_cost")
+            or 0.0
+        )
+
+        provider     = service.get("cloud_provider", "aws").lower()
+        service_type = service.get("service_type", "compute")
+        config       = service.get("config", {})
+
+        # Get discount options for this service
+        options = get_applicable_discounts(
+            provider     = provider,
+            service_type = service_type,
+            config       = config,
+        )
+
+        # Find the fraction for the requested pricing model
+        match = next(
+            (opt for opt in options if opt.model == pricing_model),
+            None
+        )
+
+        if match:
+            return round(payg_cost * match.payg_fraction, 4)
+
+        # Model not supported for this service → fall back to PAYG
+        return round(payg_cost, 4)

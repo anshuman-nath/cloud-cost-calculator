@@ -11,6 +11,7 @@ from app.config import settings
 # Import v1 routers
 from app.api.v1 import bom as bom_v1
 from app.api.v1 import scenarios as scenarios_v1
+from app.api.v1 import catalog as catalog_v1
 
 # ---------------------------------------------------------------------------
 # App instance
@@ -45,6 +46,7 @@ app.add_middleware(
 
 app.include_router(bom_v1.router)
 app.include_router(scenarios_v1.router)
+app.include_router(catalog_v1.router)
 
 # ---------------------------------------------------------------------------
 # Startup event

@@ -10,7 +10,7 @@
  *   onBOMCreated(bom)  — called after BOM is saved to backend
  */
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   createBOM,
   updateBOMServices,
@@ -20,6 +20,9 @@ import {
   DEFAULT_SERVICE_CONFIGS,
   CONFIG_FIELD_LABELS,
   ApiError,
+  getCatalogSKUs,
+  getCatalogRegions,
+  getCatalogOSOptions,
 } from "../services/api";
 
 // ---------------------------------------------------------------------------
@@ -165,7 +168,7 @@ function AzureHybridBenefitToggle({ value, onChange }) {
 // Renders the correct fields for a given provider + service_type
 // ---------------------------------------------------------------------------
 
-function ServiceConfigForm({ provider, serviceType, config, onChange }) {
+function ServiceConfigForm({ provider, serviceType, config, onChange, dynamicOptions = {} }) {
   if (!config) return null;
 
   const fields = Object.keys(config);
@@ -176,7 +179,13 @@ function ServiceConfigForm({ provider, serviceType, config, onChange }) {
         const meta    = CONFIG_FIELD_LABELS[field] || { label: field, type: "text" };
         const value   = config[field];
 
-        if (meta.type === "select") {
+        const options = dynamicOptions[field]?.length
+          ? dynamicOptions[field]
+          : meta.options || [];
+
+        const isSelect = meta.type === "select" || options.length > 0;
+
+        if (isSelect) {
           return (
             <div key={field}>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -188,7 +197,7 @@ function ServiceConfigForm({ provider, serviceType, config, onChange }) {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
                   focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
-                {meta.options.map((opt) => (
+                {options.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
@@ -230,11 +239,46 @@ function ServiceConfigForm({ provider, serviceType, config, onChange }) {
 function AddServicePanel({ provider, onAdd, onCancel }) {
   const serviceTypes = SERVICE_TYPES[provider] || [];
 
-  const [selectedType, setSelectedType] = useState(serviceTypes[0]?.value || "");
-  const [serviceName,  setServiceName]  = useState("");
-  const [config,       setConfig]       = useState(
+  const [selectedType,  setSelectedType]  = useState(serviceTypes[0]?.value || "");
+  const [serviceName,   setServiceName]   = useState("");
+  const [config,        setConfig]        = useState(
     deepClone(DEFAULT_SERVICE_CONFIGS[provider]?.[serviceTypes[0]?.value] || {})
   );
+
+  // Dynamic catalog state
+  const [skuOptions,    setSkuOptions]    = useState([]);
+  const [regionOptions, setRegionOptions] = useState([]);
+  const [osOptions,     setOsOptions]     = useState(["linux", "windows"]);
+
+  // Fetch regions + OS once when provider changes
+  useEffect(() => {
+    getCatalogRegions(provider)
+      .then((r) => setRegionOptions(r.regions))
+      .catch(() => {});
+    getCatalogOSOptions(provider)
+      .then((r) => setOsOptions(r.os_options))
+      .catch(() => {});
+  }, [provider]);
+
+  // Fetch SKUs when provider or service type changes
+  useEffect(() => {
+    if (selectedType) {
+      getCatalogSKUs(provider, selectedType)
+        .then((r) => setSkuOptions(r.skus))
+        .catch(() => setSkuOptions([]));
+    }
+  }, [provider, selectedType]);
+
+  // Build dynamic options override map
+  const dynamicOptions = {
+    instance_type: skuOptions,
+    size:          skuOptions,
+    machine_type:  skuOptions,
+    node_type:     skuOptions,
+    node_size:     skuOptions,
+    region:        regionOptions,
+    os:            osOptions,
+  };
 
   const handleTypeChange = (type) => {
     setSelectedType(type);
@@ -303,6 +347,7 @@ function AddServicePanel({ provider, onAdd, onCancel }) {
         serviceType={selectedType}
         config={config}
         onChange={handleConfigChange}
+        dynamicOptions={dynamicOptions}
       />
 
       {/* Actions */}

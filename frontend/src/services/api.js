@@ -111,7 +111,7 @@ export async function createBOM(
   services           = [],
   currency           = "USD"
 ) {
-  return post("/api/v1/bom", {
+  return post("/api/v1/bom/", {
     name,
     cloud_provider:        cloudProvider,
     azure_hybrid_benefit:  azureHybridBenefit,
@@ -125,7 +125,7 @@ export async function createBOM(
  * @returns {Promise<BOMResponse[]>}
  */
 export async function listBOMs() {
-  return get("/api/v1/bom");
+  return get("/api/v1/bom/");
 }
 
 /**
@@ -152,7 +152,7 @@ export async function updateBOMServices(bomId, services, opts = {}) {
     body.azure_hybrid_benefit = opts.azureHybridBenefit;
   if (opts.currency !== undefined)
     body.currency = opts.currency;
-  return patch(`/api/v1/bom/${bomId}/services`, body);
+  return patch(`/api/v1/bom/${bomId}/services/`, body);
 }
 
 /**
@@ -161,7 +161,7 @@ export async function updateBOMServices(bomId, services, opts = {}) {
  * @returns {Promise<null>}
  */
 export async function deleteBOM(bomId) {
-  return del(`/api/v1/bom/${bomId}`);
+  return del(`/api/v1/bom/${bomId}/`);
 }
 
 
@@ -514,3 +514,18 @@ export const PRICING_MODEL_META = {
   sud:     { label: "Sustained Use Discount", color: "#059669", badge: "bg-emerald-100 text-emerald-700", order: 7 },
   ahb:     { label: "Azure Hybrid Benefit", color: "#d97706", badge: "bg-amber-100 text-amber-700", order: 8 },
 };
+// ===========================================================================
+// Catalog endpoints — dynamic SKUs, regions, OS options
+// ===========================================================================
+
+export async function getCatalogRegions(provider) {
+  return get(`/api/v1/catalog/regions/${provider}`);
+}
+
+export async function getCatalogOSOptions(provider) {
+  return get(`/api/v1/catalog/os/${provider}`);
+}
+
+export async function getCatalogSKUs(provider, serviceType) {
+  return get(`/api/v1/catalog/skus/${provider}/${serviceType}`);
+}
