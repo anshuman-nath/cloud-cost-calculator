@@ -442,6 +442,8 @@ export default function Scenarios() {
   const models = sortedModels(scenarioData?.pricing_models || []);
   const payg   = models.find((m) => m.model === "payg");
   const recommended = scenarioData?.recommended_model;
+    const hasServices =
+        selectedBom && (selectedBom.service_count || 0) > 0;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -484,7 +486,12 @@ export default function Scenarios() {
 
             <button
               onClick={handleGenerate}
-              disabled={generating || loadingExist}
+              disabled={generating || loadingExist || !hasServices}
+              title={
+                !hasServices
+                  ? "Add at least one service to this BOM in Bill of Materials, then regenerate."
+                  : ""
+              }
               className="ml-4 bg-blue-600 text-white px-5 py-2 rounded-xl text-sm
                 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors
                 flex items-center gap-2 shrink-0"
@@ -518,17 +525,23 @@ export default function Scenarios() {
       {/* No scenarios yet — CTA */}
       {!loadingExist && selectedBomId && !scenarioData && !generating && !error && (
         <EmptyState
-          icon="⚡"
-          title="No scenarios yet"
-          subtitle="Click 'Generate Scenarios' to fetch live prices and calculate costs across all applicable pricing models."
+          icon={hasServices ? "⚡" : "🧩"}
+          title={hasServices ? "No scenarios yet" : "No services in this BOM"}
+          subtitle={
+            hasServices
+              ? "Click 'Generate Scenarios' to fetch live prices and calculate costs across all applicable pricing models."
+              : "This BOM has no services yet. Go to Bill of Materials, add one or more services to this BOM, then return here to generate scenarios."
+          }
           action={
-            <button
-              onClick={handleGenerate}
-              className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm
-                font-medium hover:bg-blue-700 transition-colors"
-            >
-              ⚡ Generate Scenarios
-            </button>
+            hasServices && (
+              <button
+                onClick={handleGenerate}
+                className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm
+                  font-medium hover:bg-blue-700 transition-colors"
+              >
+                ⚡ Generate Scenarios
+              </button>
+            )
           }
         />
       )}
@@ -545,7 +558,13 @@ export default function Scenarios() {
                 ? new Date(scenarioData.generated_at).toLocaleString()
                 : "just now"}
             </span>
-            <span>{models.length} pricing model{models.length !== 1 ? "s" : ""} applicable</span>
+            <span>
+              {selectedBom?.service_count === 0
+                ? "No pricing models applicable because this BOM has no services. Add services in Bill of Materials, then regenerate."
+                : models.length === 0
+                ? "No pricing models applicable for the current configuration."
+                : `${models.length} pricing model${models.length !== 1 ? "s" : ""} applicable`}
+            </span>
           </div>
 
           {/* Pricing model cards */}

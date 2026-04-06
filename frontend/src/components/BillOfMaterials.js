@@ -16,6 +16,7 @@ import {
   updateBOMServices,
   deleteBOM,
   listBOMs,
+  getBOM,
   SERVICE_TYPES,
   DEFAULT_SERVICE_CONFIGS,
   CONFIG_FIELD_LABELS,
@@ -441,6 +442,25 @@ export default function BillOfMaterials({ onBOMCreated }) {
   const [error,          setError]          = useState(null);
   const [success,        setSuccess]        = useState(false);
 
+  // Existing BOMs state
+  const [existingBOMs,   setExistingBOMs]   = useState([]);
+  const [selectedBOMId,  setSelectedBOMId]  = useState(null);
+  const [loadingExisting,setLoadingExisting]= useState(false);
+
+  // Load existing BOM summaries on mount
+  useEffect(() => {
+    let cancelled = false;
+    listBOMs()
+      .then((boms) => {
+        if (!cancelled) setExistingBOMs(boms || []);
+      })
+      .catch(() => {
+        // keep silent for now; could surface a banner later
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // -------------------------------------------------------------------------
   // Step 1 → Step 2: Create the BOM shell in DB
   // -------------------------------------------------------------------------
@@ -503,6 +523,36 @@ export default function BillOfMaterials({ onBOMCreated }) {
   };
 
   // -------------------------------------------------------------------------
+  // Load existing BOM into wizard
+  // -------------------------------------------------------------------------
+  const handleSelectExistingBOM = async (bomId) => {
+    if (!bomId) {
+      // "New BOM" selection
+      handleReset();
+      setSelectedBOMId(null);
+      return;
+    }
+
+    setSelectedBOMId(bomId);
+    setLoadingExisting(true);
+    setError(null);
+
+    try {
+      const bom = await getBOM(bomId);
+      setSavedBOM(bom);
+      setBomName(bom.name || "");
+      setProvider(bom.cloud_provider);
+      setAzureHybrid(!!bom.azure_hybrid_benefit);
+      setServices(bom.services || []);
+      setShowAddPanel(false);
+      setStep(2);  // Jump straight to "Add Services" for existing BOM
+    } catch (e) {
+      setError(e instanceof ApiError ? (e.detail || e.message) : e.message);
+    } finally {
+      setLoadingExisting(false);
+    }
+  };
+  // -------------------------------------------------------------------------
   // Reset
   // -------------------------------------------------------------------------
   const handleReset = () => {
@@ -515,6 +565,7 @@ export default function BillOfMaterials({ onBOMCreated }) {
     setSavedBOM(null);
     setError(null);
     setSuccess(false);
+    setSelectedBOMId(null);
   };
 
   // =========================================================================
@@ -556,6 +607,40 @@ export default function BillOfMaterials({ onBOMCreated }) {
           Define your cloud services to generate multi-model cost scenarios.
         </p>
       </div>
+            {/* Existing BOM selector */}
+      {existingBOMs.length > 0 && (
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Existing BOMs
+            </label>
+            <select
+              value={selectedBOMId || ""}
+              onChange={(e) =>
+                handleSelectExistingBOM(e.target.value ? Number(e.target.value) : null)
+              }
+              disabled={loadingExisting || loading}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
+                focus:outline-none focus:ring-2 focus:ring-blue-400"
+            >
+              <option value="">➕ New BOM…</option>
+              {existingBOMs.map((bom) => (
+                <option key={bom.id} value={bom.id}>
+                  {bom.name} ({bom.cloud_provider?.toUpperCase() || ""})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="mt-5 px-3 py-2 border border-gray-300 rounded-lg text-xs font-medium
+              text-gray-600 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       <StepIndicator currentStep={step} />
 
